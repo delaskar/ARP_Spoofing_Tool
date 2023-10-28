@@ -1,7 +1,15 @@
+// use std::collections::HashMap;
 use pnet::datalink::{self, Channel, NetworkInterface};
 use pnet::packet::arp::{ArpOperations, ArpPacket};
 use pnet::packet::ethernet::{self, EtherType, EtherTypes};
 use pnet::packet::Packet;
+
+struct PacketInfo {
+    mac_address: String,
+    ip_address: String,
+    gateway: String,
+    protocol_type: String,
+}
 
 #[derive(Debug)]
 struct NetworkConfig {
@@ -25,6 +33,8 @@ impl Default for NetworkConfig {
 
 impl NetworkConfig {
     fn capture_arp_packets(&self) {
+        //let mut packet_info_map: HashMap<String, PacketInfo> = HashMap::new();
+
         match &self.default_interface {
             Some(interface) => {
                 let (_, mut package_receiver) =
@@ -48,21 +58,15 @@ impl NetworkConfig {
                                         let arp_packet = ArpPacket::new(eth_pkt.payload());
                                         match arp_packet {
                                             Some(arp) => {
-                                                if arp.get_operation() == ArpOperations::Request {
+                                                if arp.get_operation() == ArpOperations::Reply {
                                                     // Handle ARP Request
                                                     println!(
-                                                        "ARP Request: Who has {}? Tell {}",
+                                                        "Gateway: {}, Mac-Gateway: {}, IP-Host: {}, Mac Addr: {}, Protocol Type: {}",
                                                         arp.get_target_proto_addr(),
-                                                        arp.get_sender_proto_addr()
-                                                    );
-                                                } else if arp.get_operation()
-                                                    == ArpOperations::Reply
-                                                {
-                                                    // Handle ARP Replay
-                                                    println!(
-                                                        "ARP Replay: {} is at {}",
+                                                        arp.get_target_hw_addr(),
                                                         arp.get_sender_proto_addr(),
-                                                        eth_pkt.get_source()
+                                                        arp.get_sender_hw_addr(),
+                                                        arp.get_protocol_type()
                                                     );
                                                 }
                                             }
