@@ -1,104 +1,132 @@
-// use std::collections::HashMap;
 use pnet::datalink::{self, Channel, NetworkInterface};
 use pnet::packet::arp::{ArpOperations, ArpPacket};
-use pnet::packet::ethernet::{self, EtherType, EtherTypes};
+use pnet::packet::ethernet::{self, EtherTypes};
 use pnet::packet::Packet;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use time::OffsetDateTime;
 
-struct PacketInfo {
-    mac_address: String,
-    ip_address: String,
-    gateway: String,
-    protocol_type: String,
-}
-
-#[derive(Debug)]
+// Definición de la estructura NetworkConfig
 struct NetworkConfig {
     default_interface: Option<NetworkInterface>,
 }
 
-impl Default for NetworkConfig {
-    fn default() -> Self {
-        //Get interface list
+impl NetworkConfig {
+    fn new() -> NetworkConfig {
+        // Obtener la interfaz de red predeterminada
+        let default_interface = NetworkConfig::find_default_interface();
+        NetworkConfig { default_interface }
+    }
+
+    fn find_default_interface() -> Option<NetworkInterface> {
+        // Obtener la lista de interfaces de red
         let all_interfaces = datalink::interfaces();
-        // Get default interface
+        // Encontrar la interfaz predeterminada
         let default_interface = all_interfaces
             .iter()
-            .find(|default| default.is_up() && !default.is_loopback() && !default.ips.is_empty());
-
-        NetworkConfig {
-            default_interface: default_interface.cloned(),
-        }
+            .find(|iface| iface.is_up() && !iface.is_loopback() && !iface.ips.is_empty())
+            .cloned();
+        default_interface
     }
-}
 
-impl NetworkConfig {
     fn capture_arp_packets(&self) {
-        //let mut packet_info_map: HashMap<String, PacketInfo> = HashMap::new();
-
         match &self.default_interface {
             Some(interface) => {
-                let (_, mut package_receiver) =
-                    match datalink::channel(&interface, Default::default()) {
-                        Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
-                        _ => {
-                            eprintln!(
-                            "Issues with the data-link sender.\nVerify that you are in ROOT mode."
-                        );
-                            return;
-                        }
-                    };
-                // Capture ARP Package in the local red.
-                loop {
-                    match package_receiver.next() {
-                        Ok(packet) => {
-                            let ethernet = ethernet::EthernetPacket::new(packet);
-                            match ethernet {
-                                Some(eth_pkt) => {
-                                    if eth_pkt.get_ethertype() == EtherTypes::Arp {
-                                        let arp_packet = ArpPacket::new(eth_pkt.payload());
-                                        match arp_packet {
-                                            Some(arp) => {
-                                                if arp.get_operation() == ArpOperations::Reply {
-                                                    // Handle ARP Request
-                                                    println!(
-                                                        "Gateway: {}, Mac-Gateway: {}, IP-Host: {}, Mac Addr: {}, Protocol Type: {}",
-                                                        arp.get_target_proto_addr(),
-                                                        arp.get_target_hw_addr(),
-                                                        arp.get_sender_proto_addr(),
-                                                        arp.get_sender_hw_addr(),
-                                                        arp.get_protocol_type()
-                                                    );
-                                                }
-                                            }
-                                            None => {
-                                                eprintln!("Issues with IPs.");
-                                            }
-                                        }
-                                    }
-                                    // println!("{:?}", eth_pkt);
-                                    // Extraction EthernetType
-                                    // println!("{}", EtherType::new(34525));
-                                }
-                                None => {
-                                    eprintln!("Issues with Ethernet Packet.");
-                                }
-                            }
-                        }
-                        Err(e) => eprintln!("Error Packet Receiver: {}", e),
-                    }
-                }
+                let (_, mut package_receiver) = NetworkConfig::open_data_channel(&interface);
+                NetworkConfig::process_arp_packets(&mut package_receiver);
             }
             None => {
                 eprintln!("No suitable default interface found in config.");
-                return;
             }
+        }
+    }
+
+    fn open_data_channel(
+        interface: &NetworkInterface,
+    ) -> (
+        Box<dyn datalink::DataLinkSender>,
+        Box<dyn datalink::DataLinkReceiver>,
+    ) {
+        match datalink::channel(interface, Default::default()) {
+            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+            _ => {
+                eprintln!("Issues with the data-link sender.\nVerify that you are in ROOT mode.");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    fn process_arp_packets(package_receiver: &mut Box<dyn datalink::DataLinkReceiver>) {
+        // Capture ARP packages in the local network
+        loop {
+            match package_receiver.next() {
+                Ok(packet) => {
+                    let ethernet = ethernet::EthernetPacket::new(packet);
+                    if let Some(eth_pkt) = ethernet {
+                        if eth_pkt.get_ethertype() == EtherTypes::Arp {
+                            NetworkConfig::handle_arp_packet(&eth_pkt);
+                        }
+                    } else {
+                        eprintln!("Issues with Ethernet Packet.");
+                    }
+                }
+                Err(e) => eprintln!("Error Packet Receiver: {}", e),
+            }
+        }
+    }
+
+    fn handle_arp_packet(eth_pkt: &ethernet::EthernetPacket) {
+        let start_time = Instant::now();
+
+        let arp_packet = ArpPacket::new(eth_pkt.payload());
+        if let Some(arp) = arp_packet {
+            let operation = arp.get_operation();
+            let elapsed_time = start_time.elapsed();
+            let current_time = SystemTime::now();
+
+            if let Ok(duration) = current_time.duration_since(UNIX_EPOCH) {
+                let unix_timestamp = duration.as_secs();
+                let formatted_time = OffsetDateTime::from_unix_timestamp(unix_timestamp as i64)
+                    .ok()
+                    .unwrap();
+
+                match operation {
+                    ArpOperations::Request => {
+                        println!(
+                            "ARP Request (Date: {:?} Time: {:?}, Elapsed Time: {:?}):",
+                            formatted_time.date(),
+                            formatted_time.time(),
+                            elapsed_time
+                        );
+                        println!("  Sender IP Address: {}", arp.get_sender_proto_addr());
+                        println!("  Sender MAC Address: {}", arp.get_sender_hw_addr());
+                        println!("  Target IP Address: {}", arp.get_target_proto_addr());
+                        println!("  Target MAC Address: {}", arp.get_target_hw_addr());
+                        println!("  Protocol Type: {}", arp.get_protocol_type());
+                    }
+                    ArpOperations::Reply => {
+                        println!(
+                            "ARP Response (Date: {:?} Time: {:?}, Elapsed Time: {:?}):",
+                            formatted_time.date(),
+                            formatted_time.time(),
+                            elapsed_time
+                        );
+                        println!("  Sender IP Address: {}", arp.get_sender_proto_addr());
+                        println!("  Sender MAC Address: {}", arp.get_sender_hw_addr());
+                    }
+                    _ => {
+                        eprintln!("Unknown ARP operation.");
+                    }
+                }
+            } else {
+                eprintln!("Error obtaining system time.");
+            }
+        } else {
+            eprintln!("Issues with ARP Packet.");
         }
     }
 }
 
 fn main() {
-    // Analyze layer 2, ARP operate in layer 2.
-    // Create an instance of NetworkConfig using default value
-    let config = NetworkConfig::default();
-    config.capture_arp_packets();
+    let network_config = NetworkConfig::new();
+    network_config.capture_arp_packets();
 }
