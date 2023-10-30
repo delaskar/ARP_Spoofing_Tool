@@ -1,3 +1,4 @@
+use crossbeam::channel;
 use pnet::datalink::{self, Channel, NetworkInterface};
 use pnet::packet::arp::{ArpOperations, ArpPacket};
 use pnet::packet::ethernet::{self, EtherTypes};
@@ -12,8 +13,10 @@ use time::OffsetDateTime;
 // Defining the NetworkConfig structure
 pub struct NetworkConfig {
     pub default_interface: Option<NetworkInterface>,
-    pub arp_request_data: HashMap<String, String>,
-    pub arp_response_data: HashMap<String, String>,
+    arp_request_data: HashMap<String, String>,
+    arp_response_data: HashMap<String, String>,
+    arp_request_counter: usize,
+    arp_response_counter: usize,
 }
 
 impl NetworkConfig {
@@ -21,10 +24,14 @@ impl NetworkConfig {
         let default_interface = NetworkConfig::find_default_interface();
         let arp_request_data = HashMap::new();
         let arp_response_data = HashMap::new();
+        let arp_request_counter = 0;
+        let arp_response_counter = 0;
         NetworkConfig {
             default_interface,
             arp_request_data,
             arp_response_data,
+            arp_request_counter,
+            arp_response_counter,
         }
     }
 
@@ -67,8 +74,18 @@ impl NetworkConfig {
     }
 
     fn process_arp_packets(&mut self, package_receiver: &mut Box<dyn datalink::DataLinkReceiver>) {
+        let (sender, receiver) = channel::unbounded();
+        ctrlc::set_handler(move || {
+            sender.send(()).expect("Failed to send exit signal");
+        })
+        .expect("Error setting Ctrl-C handler");
+
         // Capture ARP packages in the local network
         loop {
+            if let Ok(_) = receiver.try_recv() {
+                break; // Exit the loop when receiving the exit signal
+            }
+
             match package_receiver.next() {
                 Ok(packet) => {
                     let ethernet = ethernet::EthernetPacket::new(packet);
@@ -115,12 +132,12 @@ impl NetworkConfig {
                         println!("  Protocol Type: {}", arp.get_protocol_type());
 
                         let data = format!(
-                            "ARP Request ==> (Date: {:?} Time: {:?}, Elapsed Time: {:?}):\n\
-                             Sender IP Address: {}\n\
-                             Sender MAC Address: {}\n\
-                             Target IP Address: {}\n\
-                             Target MAC Address: {}\n\
-                             Protocol Type: {}\n",
+                            r#"ARP Request [👁] (Date: {:?} Time: {:?}, Elapsed Time: {:?}):
+                             Sender IP Address: {}
+                             Sender MAC Address: {}
+                             Target IP Address: {}
+                             Target MAC Address: {}
+                             Protocol Type: {}"#,
                             formatted_time.date(),
                             formatted_time.time(),
                             elapsed_time,
@@ -131,10 +148,10 @@ impl NetworkConfig {
                             arp.get_protocol_type()
                         );
 
-                        self.arp_request_data.insert(
-                            String::from("ARP Request"),
-                            serde_json::to_string_pretty(&data).unwrap(),
-                        );
+                        self.arp_request_counter += 1;
+                        let key = format!("ARP Request {}", self.arp_request_counter);
+                        self.arp_request_data
+                            .insert(key, serde_json::to_string_pretty(&data).unwrap());
                     }
                     ArpOperations::Reply => {
                         println!(
@@ -147,9 +164,9 @@ impl NetworkConfig {
                         println!("  Sender MAC Address: {}", arp.get_sender_hw_addr());
 
                         let data = format!(
-                            "ARP Response (Date: {:?} Time: {:?}, Elapsed Time: {:?}):\n\
-                             Sender IP Address: {}\n\
-                             Sender MAC Address: {}\n",
+                            r#"ARP Response [🧐] (Date: {:?} Time: {:?}, Elapsed Time: {:?}):
+                             Sender IP Address: {}
+                             Sender MAC Address: {}"#,
                             formatted_time.date(),
                             formatted_time.time(),
                             elapsed_time,
@@ -157,10 +174,10 @@ impl NetworkConfig {
                             arp.get_sender_hw_addr()
                         );
 
-                        self.arp_response_data.insert(
-                            String::from("ARP Response"),
-                            serde_json::to_string_pretty(&data).unwrap(),
-                        );
+                        self.arp_response_counter += 1;
+                        let key = format!("ARP Response {}", self.arp_response_counter);
+                        self.arp_response_data
+                            .insert(key, serde_json::to_string_pretty(&data).unwrap());
                     }
                     _ => {
                         eprintln!("Unknown ARP operation.");
@@ -174,6 +191,12 @@ impl NetworkConfig {
         }
     }
 
+    fn store_arp_traffic(&self) -> (&HashMap<String, String>, &HashMap<String, String>) {
+        let store_arp_request = &self.arp_request_data;
+        let store_arp_response = &self.arp_response_data;
+        (store_arp_request, store_arp_response)
+    }
+
     pub fn write_arp_data_to_directory(&self, directory: &str) -> io::Result<()> {
         // Create the folder if it does not exist
         fs::create_dir_all(directory)?;
@@ -182,9 +205,11 @@ impl NetworkConfig {
         let arp_request_file = format!("{}/arp_request.json", directory);
         let arp_response_file = format!("{}/arp_response.json", directory);
 
+        let (stored_request, stored_response) = self.store_arp_traffic();
+
         // Write data to files
-        self.write_data_to_file(&arp_request_file, &self.arp_request_data)?;
-        self.write_data_to_file(&arp_response_file, &self.arp_response_data)?;
+        self.write_data_to_file(&arp_request_file, stored_request)?;
+        self.write_data_to_file(&arp_response_file, stored_response)?;
 
         Ok(())
     }

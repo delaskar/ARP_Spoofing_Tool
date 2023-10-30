@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+crossbeam = "0.8.2"
 ctrlc = "3.4.1"
 pnet = "0.34.0"
 serde_json = "1.0.107"
