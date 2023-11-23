@@ -11,11 +11,12 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 
 #[derive(Debug)]
-enum IPError {
+pub enum IPError {
     InvalidFormat,
     OutOfRange,
     IncorrectNumberOfOctets,
     NoInterfaceExtracted,
+    PacketNotReceived,
 }
 
 impl fmt::Display for IPError {
@@ -27,6 +28,7 @@ impl fmt::Display for IPError {
             IPError::NoInterfaceExtracted => {
                 writeln!(f, "Error while finding the default interface.")
             }
+            IPError::PacketNotReceived => writeln!(f, "Packet NOT received!"),
         }
     }
 }
@@ -127,7 +129,7 @@ fn ip_and_mac_default() -> (Ipv4Addr, MacAddr) {
     (ipv4_address, mac)
 }
 
-pub fn get_victim_mac_address(ip_victim: String) {
+pub fn get_victim_mac_address(ip_victim: String) -> Result<MacAddr, IPError> {
     // Default Host guest details
     let (ip, mac) = ip_and_mac_default();
 
@@ -165,16 +167,27 @@ pub fn get_victim_mac_address(ip_victim: String) {
         _ => panic!("Issues with the data link sender"),
     };
 
-    loop {
+    let mut received = false;
+    let mut victim_mac = MacAddr::zero();
+
+    while !received {
         match package_receiver.next() {
             Ok(packet) => {
                 let ethernet = EthernetPacket::new(packet).unwrap();
                 if ethernet.get_destination() == sender_mac {
-                    println!("Received Ethernet packet: {:?}", ethernet.get_source());
-                    break;
+                    if ethernet.get_ethertype() == EtherTypes::Arp {
+                        victim_mac = ethernet.get_source();
+                        received = true;
+                    }
                 }
             }
             _ => eprintln!("Packet NOT received!"),
         }
+    }
+
+    if !received {
+        Err(IPError::PacketNotReceived)
+    } else {
+        Ok(victim_mac)
     }
 }
