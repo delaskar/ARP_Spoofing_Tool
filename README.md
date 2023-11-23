@@ -11,7 +11,7 @@ This project is an ARP spoofing tool written in Rust that allows security resear
 This module is responsible for capturing and recording ARP traffic on the network.
 
 - [x] `capture_arp_packets`: Initiates the capture of ARP packets on the network.
-- [ ] `get_victim_mac(ip_address)`: Retrieves the MAC address of a victim based on their IP address.
+- [x] `get_victim_mac(ip_address)`: Retrieves the MAC address of a victim based on their IP address.
 - [ ] `get_router_mac()`: Obtains the MAC address of the router or gateway on the network.
 - [x] `log_arp_packet(packet)`: Logs and stores captured ARP packets.
 - [ ] `analyze_arp_traffic(packets)`: Performs an analysis of captured ARP packets to detect suspicious patterns.

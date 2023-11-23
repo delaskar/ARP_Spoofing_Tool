@@ -78,7 +78,7 @@ impl NetworkConfig {
         ctrlc::set_handler(move || {
             sender.send(()).expect("Failed to send exit signal");
         })
-            .expect("Error setting Ctrl-C handler");
+        .expect("Error setting Ctrl-C handler");
 
         // Capture ARP packages in the local network
         loop {
@@ -119,17 +119,17 @@ impl NetworkConfig {
 
                 match operation {
                     ArpOperations::Request => {
-                        println!(
-                            "ARP Request (Date: {:?} Time: {:?}, Elapsed Time: {:?}):",
-                            formatted_time.date(),
-                            formatted_time.time(),
-                            elapsed_time
-                        );
-                        println!("  Sender IP Address: {}", arp.get_sender_proto_addr());
-                        println!("  Sender MAC Address: {}", arp.get_sender_hw_addr());
-                        println!("  Target IP Address: {}", arp.get_target_proto_addr());
-                        println!("  Target MAC Address: {}", arp.get_target_hw_addr());
-                        println!("  Protocol Type: {}", arp.get_protocol_type());
+                        // println!(
+                        //     "ARP Request (Date: {:?} Time: {:?}, Elapsed Time: {:?}):",
+                        //     formatted_time.date(),
+                        //     formatted_time.time(),
+                        //     elapsed_time
+                        // );
+                        // println!("  Sender IP Address: {}", arp.get_sender_proto_addr());
+                        // println!("  Sender MAC Address: {}", arp.get_sender_hw_addr());
+                        // println!("  Target IP Address: {}", arp.get_target_proto_addr());
+                        // println!("  Target MAC Address: {}", arp.get_target_hw_addr());
+                        // println!("  Protocol Type: {}", arp.get_protocol_type());
 
                         let data = format!(
                             r#"ARP Request [👁] (Date: {:?} Time: {:?}, Elapsed Time: {:?}):
@@ -154,14 +154,14 @@ impl NetworkConfig {
                             .insert(key, serde_json::to_string_pretty(&data).unwrap());
                     }
                     ArpOperations::Reply => {
-                        println!(
-                            "ARP Response (Date: {:?} Time: {:?}, Elapsed Time: {:?}):",
-                            formatted_time.date(),
-                            formatted_time.time(),
-                            elapsed_time
-                        );
-                        println!("  Sender IP Address: {}", arp.get_sender_proto_addr());
-                        println!("  Sender MAC Address: {}", arp.get_sender_hw_addr());
+                        // println!(
+                        //     "ARP Response (Date: {:?} Time: {:?}, Elapsed Time: {:?}):",
+                        //     formatted_time.date(),
+                        //     formatted_time.time(),
+                        //     elapsed_time
+                        // );
+                        // println!("  Sender IP Address: {}", arp.get_sender_proto_addr());
+                        // println!("  Sender MAC Address: {}", arp.get_sender_hw_addr());
 
                         let data = format!(
                             r#"ARP Response [🧐] (Date: {:?} Time: {:?}, Elapsed Time: {:?}):
